@@ -53,7 +53,7 @@ func RunTUI() error {
 	legend := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText("----------------------------------------------------\n[green]a[-] Add   [yellow]d[-] Delete   [cyan]Enter[-] Update   [red]Esc[-] Back   [magenta]Tab[-] Switch Tab")
+		SetText("----------------------------------------------------\n[green]a[-] Add   [yellow]d[-] Delete   [cyan]Enter[-] Update   [red]Esc[-] Back   [magenta]Tab[-] Switch Tab   [blue]i[-] Import CSV (Transactions)")
 
 	pages := tview.NewPages()
 
@@ -61,14 +61,13 @@ func RunTUI() error {
 		SetBorders(true).
 		SetSelectable(true, false)
 	refreshBudgetTable(budgetTable, database)
-
 	if budgetTable.GetRowCount() > 1 {
 		budgetTable.Select(1, 0)
 	}
 
 	transView := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
-		SetText("Transactions view coming soon")
+		SetText("Press 'i' to import a CSV transaction file")
 	pages.AddPage("Transactions", transView, true, false)
 
 	notifView := tview.NewTextView().
@@ -193,6 +192,46 @@ func RunTUI() error {
 		return event
 	})
 
+	var inputForm *tview.Form
+	transView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if currentTab != 1 {
+			return event
+		}
+		if event.Rune() == 'i' {
+			inputForm = tview.NewForm().
+				AddInputField("CSV Path", "", 50, nil, nil).
+				AddButton("Import", func() {
+					filePath := inputForm.GetFormItemByLabel("CSV Path").(*tview.InputField).GetText()
+					updatedBudgets, skippedCategories, _, err := db.ProcessCSVTransactions(database, filePath)
+					if err != nil {
+						log.Printf("Import error: %v", err)
+					}
+
+					msg := fmt.Sprintf("Updated budgets: %v\nSkipped categories: %v", updatedBudgets, skippedCategories)
+					modal := tview.NewModal().
+						SetText(msg).
+						AddButtons([]string{"OK"}).
+						SetDoneFunc(func(i int, l string) {
+							pages.SwitchToPage("Transactions")
+							app.SetFocus(transView)
+						})
+					pages.AddPage("importModal", modal, true, true)
+					pages.RemovePage("inputForm")
+					refreshBudgetTable(budgetTable, database)
+				}).
+				AddButton("Cancel", func() {
+					pages.SwitchToPage("Transactions")
+					app.SetFocus(transView)
+					pages.RemovePage("inputForm")
+				})
+			inputForm.SetBorder(true).SetTitle("Import CSV Transactions").SetTitleAlign(tview.AlignCenter)
+			pages.AddPage("inputForm", inputForm, true, true)
+			app.SetFocus(inputForm)
+			return nil
+		}
+		return event
+	})
+
 	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(title, 5, 1, false).
 		AddItem(tabBar, 1, 1, false).
@@ -201,7 +240,7 @@ func RunTUI() error {
 
 	mainFlex.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		frontPage, _ := pages.GetFrontPage()
-		dialogActive := frontPage == "addForm" || frontPage == "updateForm" || frontPage == "deleteModal"
+		dialogActive := frontPage != "Budgets" && frontPage != "Transactions" && frontPage != "Notifications"
 
 		if dialogActive {
 			return event
@@ -215,6 +254,8 @@ func RunTUI() error {
 			updateTabBar()
 			if currentTab == 0 {
 				app.SetFocus(budgetTable)
+			} else if currentTab == 1 {
+				app.SetFocus(transView)
 			}
 			return nil
 		case tcell.KeyBacktab:
@@ -224,9 +265,12 @@ func RunTUI() error {
 			updateTabBar()
 			if currentTab == 0 {
 				app.SetFocus(budgetTable)
+			} else if currentTab == 1 {
+				app.SetFocus(transView)
 			}
 			return nil
 		}
+
 		return event
 	})
 

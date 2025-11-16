@@ -2,7 +2,10 @@ package db
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"os"
+	"strconv"
 )
 
 type Budget struct {
@@ -80,4 +83,59 @@ func ListBudgets(db *sql.DB) ([]Budget, error) {
 		budgets = append(budgets, b)
 	}
 	return budgets, nil
+}
+
+func ProcessCSVTransactions(db *sql.DB, filePath string) (processed int, updated map[string]float64, skipped []string, err error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	updated = make(map[string]float64)
+	skippedMap := make(map[string]bool)
+
+	for _, rec := range records {
+		if len(rec) < 4 {
+			continue
+		}
+		category := rec[2]
+		amountStr := rec[3]
+		amount, err := strconv.ParseFloat(amountStr, 64)
+		if err != nil {
+			continue
+		}
+		if amount < 0 {
+			amount = -amount
+		}
+
+		var id int
+		err = db.QueryRow("SELECT id FROM budgets WHERE category = ?", category).Scan(&id)
+		if err == sql.ErrNoRows {
+			skippedMap[category] = true
+			continue
+		} else if err != nil {
+			return processed, nil, nil, err
+		}
+
+		_, err = db.Exec("UPDATE budgets SET amount = amount - ? WHERE id = ?", amount, id)
+		if err != nil {
+			return processed, nil, nil, err
+		}
+
+		updated[category] += amount
+		processed++
+	}
+
+	for cat := range skippedMap {
+		skipped = append(skipped, cat)
+	}
+
+	return processed, updated, skipped, nil
 }
