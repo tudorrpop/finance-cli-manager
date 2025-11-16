@@ -1,0 +1,30 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+finance-cli-manager
+bin/
+dist/
+
+# Build / temp files
+*.log
+*.cache
+*.tmp
+tmp/
+cache/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Env files
+.env
+.env.*
